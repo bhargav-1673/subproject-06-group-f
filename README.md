@@ -115,6 +115,8 @@ cdac-mpplab-groupf/
 ├── .gitignore
 │
 ├── docs/
+|   ├── status/
+|   ├── team_progress.md   
 │   ├── architecture.md
 │   ├── api_spec.md
 │   ├── workflow_diagram.md
@@ -371,10 +373,10 @@ Example:
 
 ```text
 main
-├── shared-buffer
-├── producer-module
-├── consumer-module
-├── integration
+├── feature/shared_buffer
+├── feature/producer_module
+├── feature/consumer_module
+├── feature/integration
 └── documentation
 ```
 
