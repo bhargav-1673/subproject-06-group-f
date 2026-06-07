@@ -361,6 +361,230 @@ Additional stress tests will be added during integration.
 
 ---
 
+## Project Workflow & Team Collaboration
+
+### Branching Strategy
+
+Each major component must be developed on a separate feature branch.
+
+Example:
+
+```text
+main
+├── shared-buffer
+├── producer-module
+├── consumer-module
+├── integration
+└── documentation
+```
+
+Rules:
+
+* Never commit unfinished work directly to `main`.
+* Create Pull Requests (PRs) for all major changes.
+* Ensure code compiles and tests pass before merging.
+* Keep `main` stable at all times.
+
+---
+
+## Daily Progress Updates (Mandatory)
+
+To avoid blocking other team members, every member must update their progress at the end of each work session.
+
+### Project Status Files
+
+```text
+docs/
+├── team_progress.md
+└── status/
+    ├── bhargav.md
+    ├── samay.md
+    ├── ajay.md
+    └── akhila.md
+```
+
+### Update Format
+
+Example:
+
+```markdown
+## Date: 2026-06-07
+
+Completed:
+- Implemented producer packet generator
+- Added packet timestamp support
+
+Current Task:
+- Producer thread testing
+
+Blockers:
+- None
+
+Next:
+- Integration with shared buffer
+```
+
+Benefits:
+
+* Team members can continue development without waiting for meetings.
+* Everyone knows the latest repository status.
+* Easier integration and debugging.
+* Clear contribution history for project reviews.
+
+---
+
+## Shared Buffer API Rules
+
+### Mandatory Rule
+
+Never access SharedBuffer internals directly.
+
+❌ Incorrect:
+
+```c
+buffer.slots[i]
+buffer.count
+buffer.head
+buffer.tail
+```
+
+✅ Correct:
+
+```c
+enqueue(&buffer, &packet);
+dequeue(&buffer, &packet);
+```
+
+Only the buffer module should manipulate internal buffer state.
+
+---
+
+## Synchronization Notes
+
+### Important Fix (Version 1.0)
+
+During implementation review, a concurrency issue was identified in `dequeue()`.
+
+Initial design:
+
+```c
+pthread_rwlock_rdlock(&buf->lock);
+```
+
+Problem:
+
+* `dequeue()` modifies:
+
+  * `head`
+  * `count`
+
+Using a READ lock allows multiple consumers to enter simultaneously and can cause race conditions.
+
+Correct implementation:
+
+```c
+pthread_rwlock_wrlock(&buf->lock);
+```
+
+Current policy:
+
+| Function  | Lock Type  |
+| --------- | ---------- |
+| enqueue() | WRITE Lock |
+| dequeue() | WRITE Lock |
+
+This guarantees correctness for:
+
+* Multiple Producers
+* Multiple Consumers
+* Future MPI + Pthreads integration (Group-E)
+
+---
+
+## Development Checklist
+
+Before committing code:
+
+* [ ] Code compiles successfully
+* [ ] No compiler warnings (`-Wall -Wextra`)
+* [ ] Unit tests pass
+* [ ] Documentation updated
+* [ ] Personal status file updated
+* [ ] team_progress.md updated
+* [ ] Changes pushed to feature branch
+
+---
+
+## Integration Guidelines
+
+All modules must depend only on public interfaces.
+
+### Producer Module
+
+Uses:
+
+```c
+enqueue()
+```
+
+Must not modify buffer internals.
+
+### Consumer Module
+
+Uses:
+
+```c
+dequeue()
+```
+
+Must not modify buffer internals.
+
+### Integration Module
+
+Responsible for:
+
+* Thread creation
+* Thread coordination
+* Buffer initialization
+* Buffer destruction
+
+---
+
+## Known Stable Components
+
+### Shared Buffer API v1.0
+
+Status: Stable
+
+Completed:
+
+* DataUnit structure
+* SharedBuffer structure
+* Circular buffer implementation
+* buffer_init()
+* enqueue()
+* dequeue()
+* buffer_destroy()
+* Unit tests
+* Build system support
+
+All smoke tests passing.
+
+---
+
+## Communication Policy
+
+When completing a task:
+
+1. Update your status file.
+2. Commit your changes.
+3. Push to your feature branch.
+4. Update `team_progress.md`.
+5. Inform the team in the project communication channel.
+
+This ensures development continues in parallel and no team member is blocked waiting for updates.
+
+
 # Future Extensions
 
 The architecture is intentionally generic to support:

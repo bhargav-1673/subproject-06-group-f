@@ -1,0 +1,18 @@
+# Build artifacts
+build/
+*.o
+*.out
+
+# Executables
+test_buffer
+test_producer
+test_consumer
+test_integration
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
