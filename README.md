@@ -193,13 +193,13 @@ The shared memory region is implemented as a circular queue.
 ```c
 typedef struct
 {
-    DataUnit buffer[BUFFER_SIZE];
+    DataUnit slots[BUFFER_SIZE];
 
     int head;
     int tail;
     int count;
 
-    pthread_rwlock_t rwlock;
+    pthread_rwlock_t lock;
 
 } SharedBuffer;
 ```
@@ -237,9 +237,10 @@ int dequeue(
 ### Return Codes
 
 ```c
-#define BUFFER_SUCCESS  0
-#define BUFFER_FULL    -1
-#define BUFFER_EMPTY   -2
+#define BUF_OK      0
+#define BUF_FULL   -1
+#define BUF_EMPTY  -2
+#define BUF_ERR    -3
 ```
 
 ---
@@ -463,43 +464,21 @@ Only the buffer module should manipulate internal buffer state.
 
 ## Synchronization Notes
 
-### Important Fix (Version 1.0)
+### Lock Strategy (Version 1.0)
 
-During implementation review, a concurrency issue was identified in `dequeue()`.
+Both `enqueue()` and `dequeue()` use `pthread_rwlock_wrlock()` (WRITE lock) because both operations modify shared buffer state (`head`, `tail`, `count`).
 
-Initial design:
-
-```c
-pthread_rwlock_rdlock(&buf->lock);
-```
-
-Problem:
-
-* `dequeue()` modifies:
-
-  * `head`
-  * `count`
-
-Using a READ lock allows multiple consumers to enter simultaneously and can cause race conditions.
-
-Correct implementation:
-
-```c
-pthread_rwlock_wrlock(&buf->lock);
-```
-
-Current policy:
-
-| Function  | Lock Type  |
-| --------- | ---------- |
-| enqueue() | WRITE Lock |
-| dequeue() | WRITE Lock |
+| Function        | Lock Type  | Reason                          |
+| --------------- | ---------- | ------------------------------- |
+| enqueue()       | WRITE Lock | Modifies tail and count         |
+| dequeue()       | WRITE Lock | Modifies head and count         |
 
 This guarantees correctness for:
+- Multiple Producers
+- Multiple Consumers
+- Future MPI + Pthreads integration (Group-E)
 
-* Multiple Producers
-* Multiple Consumers
-* Future MPI + Pthreads integration (Group-E)
+`pthread_rwlock_rdlock()` is reserved for future read-only operations such as a `peek()` or buffer status query, which Group-E may add during Subtask-07. The rwlock is chosen over a plain mutex specifically to support this extension point.
 
 ---
 
