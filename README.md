@@ -193,13 +193,13 @@ The shared memory region is implemented as a circular queue.
 ```c
 typedef struct
 {
-    DataUnit slots[BUFFER_SIZE];
+    DataUnit buffer[BUFFER_SIZE];
 
     int head;
     int tail;
     int count;
 
-    pthread_rwlock_t lock;
+    pthread_rwlock_t rwlock;
 
 } SharedBuffer;
 ```
@@ -237,10 +237,9 @@ int dequeue(
 ### Return Codes
 
 ```c
-#define BUF_OK      0
-#define BUF_FULL   -1
-#define BUF_EMPTY  -2
-#define BUF_ERR    -3
+#define BUFFER_SUCCESS  0
+#define BUFFER_FULL    -1
+#define BUFFER_EMPTY   -2
 ```
 
 ---
@@ -350,17 +349,30 @@ Direct commits to `main` should be avoided.
 
 # Testing
 
-Current validation focuses on:
+### Completed Tests
 
-* Buffer initialization
-* Successful enqueue
-* Successful dequeue
-* Buffer full condition
-* Buffer empty condition
-* Circular queue wrap-around
-* Thread safety verification
+| Test | Module | Result |
+| ---- | ------ | ------ |
+| Buffer initialization | Shared Buffer | ✅ PASS |
+| Enqueue (single) | Shared Buffer | ✅ PASS |
+| Dequeue (single) | Shared Buffer | ✅ PASS |
+| Buffer full condition | Shared Buffer | ✅ PASS |
+| Buffer empty condition | Shared Buffer | ✅ PASS |
+| Circular wrap-around | Shared Buffer | ✅ PASS |
+| Buffer drain | Shared Buffer | ✅ PASS |
+| Single producer | Producer | ✅ PASS |
+| Buffer full — producer drop | Producer | ✅ PASS |
+| 4-thread concurrent producers | Producer | ✅ PASS |
 
-Additional stress tests will be added during integration.
+### Pending Tests
+
+| Test | Module | Status |
+| ---- | ------ | ------ |
+| Single consumer | Consumer | ⏳ Pending |
+| Buffer empty — consumer retry | Consumer | ⏳ Pending |
+| Multi-consumer concurrency | Consumer | ⏳ Pending |
+| Producer + Consumer end-to-end | Integration | ⏳ Pending |
+| 4 producers + 4 consumers | Integration | ⏳ Pending |
 
 ---
 
@@ -464,21 +476,43 @@ Only the buffer module should manipulate internal buffer state.
 
 ## Synchronization Notes
 
-### Lock Strategy (Version 1.0)
+### Important Fix (Version 1.0)
 
-Both `enqueue()` and `dequeue()` use `pthread_rwlock_wrlock()` (WRITE lock) because both operations modify shared buffer state (`head`, `tail`, `count`).
+During implementation review, a concurrency issue was identified in `dequeue()`.
 
-| Function        | Lock Type  | Reason                          |
-| --------------- | ---------- | ------------------------------- |
-| enqueue()       | WRITE Lock | Modifies tail and count         |
-| dequeue()       | WRITE Lock | Modifies head and count         |
+Initial design:
+
+```c
+pthread_rwlock_rdlock(&buf->lock);
+```
+
+Problem:
+
+* `dequeue()` modifies:
+
+  * `head`
+  * `count`
+
+Using a READ lock allows multiple consumers to enter simultaneously and can cause race conditions.
+
+Correct implementation:
+
+```c
+pthread_rwlock_wrlock(&buf->lock);
+```
+
+Current policy:
+
+| Function  | Lock Type  |
+| --------- | ---------- |
+| enqueue() | WRITE Lock |
+| dequeue() | WRITE Lock |
 
 This guarantees correctness for:
-- Multiple Producers
-- Multiple Consumers
-- Future MPI + Pthreads integration (Group-E)
 
-`pthread_rwlock_rdlock()` is reserved for future read-only operations such as a `peek()` or buffer status query, which Group-E may add during Subtask-07. The rwlock is chosen over a plain mutex specifically to support this extension point.
+* Multiple Producers
+* Multiple Consumers
+* Future MPI + Pthreads integration (Group-E)
 
 ---
 
@@ -535,7 +569,7 @@ Responsible for:
 
 ### Shared Buffer API v1.0
 
-Status: Stable
+Status: ✅ Stable
 
 Completed:
 
@@ -546,10 +580,55 @@ Completed:
 * enqueue()
 * dequeue()
 * buffer_destroy()
-* Unit tests
+* Unit tests (7/7 passing)
 * Build system support
 
-All smoke tests passing.
+---
+
+### Producer Module v1.0
+
+Status: ✅ Stable
+
+Completed:
+
+* ProducerArgs structure
+* generate_packet()
+* producer_thread()
+* Single producer test (PASS)
+* Buffer-full condition test (PASS)
+* Multi-producer concurrency test — 4 threads, 20 packets (PASS)
+
+Notes:
+
+* Unique packet ID ranges per producer (Hyderabad: 1000–1004, Mumbai: 2000–2004, etc.)
+* BUF_FULL handled gracefully — packets dropped with log output, no crash
+* No direct buffer access — enqueue() only
+
+---
+
+### Consumer Module
+
+Status: 🔄 In Progress (Ajay)
+
+Pending:
+
+* consumer.h
+* consumer.c
+* process_packet()
+* consumer_thread()
+* Unit tests
+
+---
+
+### Integration Module
+
+Status: ⏳ Pending consumer delivery
+
+Responsible for:
+
+* Thread creation for all producers and consumers
+* Buffer initialization and destruction
+* End-to-end pipeline validation
 
 ---
 
