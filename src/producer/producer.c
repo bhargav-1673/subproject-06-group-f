@@ -1,81 +1,55 @@
+/*
+ * producer.c
+ * ----------
+ * Producer thread implementation for Sub-Project-06.
+ *
+ * Each producer thread:
+ *   1. Calls generate_packet() to create a DataUnit
+ *   2. Calls enqueue() to push it into the shared buffer
+ *   3. Sleeps briefly to simulate real telecom intervals
+ *
+ * generate_packet() lives in packet_generator.c — fully swappable.
+ * This file does not need to change if the data source changes.
+ *
+ * Author  : Jagabathuni V M Bhargav (Group Lead, Group-F)
+ * Build   : gcc -pthread -O2 producer.c packet_generator.c shared_buffer.c -o ...
+ */
+
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
-#include <time.h>
+#include <pthread.h>
 
 #include "producer.h"
 
-DataUnit generate_packet(
-        int packet_id,
-        const char *source)
-{
-    DataUnit packet;
-
-    memset(&packet, 0, sizeof(DataUnit));
-
-    packet.packet_id = packet_id;
-
-    strncpy(
-        packet.source,
-        source,
-        sizeof(packet.source) - 1);
-
-    packet.source[sizeof(packet.source) - 1] = '\0';
-
-    snprintf(
-        packet.data,
-        sizeof(packet.data),
-        "Packet-%d generated from %s",
-        packet_id,
-        source);
-
-    packet.size = strlen(packet.data);
-
-    packet.timestamp = time(NULL);
-
-    return packet;
-}
-
 void *producer_thread(void *arg)
 {
-    ProducerArgs *args =
-        (ProducerArgs *)arg;
+    ProducerArgs *args = (ProducerArgs *)arg;
 
-    for(int i = 0;
-        i < args->packets_to_generate;
-        i++)
+    for (int i = 0; i < args->packets_to_generate; i++)
     {
-        DataUnit packet =
-            generate_packet(
+        DataUnit packet = generate_packet(
                 args->start_packet_id + i,
                 args->source_name);
 
-        int status =
-            enqueue(
-                args->buffer,
-                &packet);
+        int status = enqueue(args->buffer, &packet);
 
-        if(status == BUF_OK)
+        if (status == BUF_OK)
         {
-            printf(
-                "[Producer %s] Packet %d Enqueued\n",
-                args->source_name,
-                packet.packet_id);
+            printf("[Producer %s] Packet %d enqueued\n",
+                   args->source_name,
+                   packet.packet_id);
         }
-        else if(status == BUF_FULL)
+        else if (status == BUF_FULL)
         {
-            printf(
-                "[Producer %s] BUFFER FULL "
-                "Dropping Packet %d\n",
-                args->source_name,
-                packet.packet_id);
+            printf("[Producer %s] BUFFER FULL — Packet %d dropped\n",
+                   args->source_name,
+                   packet.packet_id);
         }
         else
         {
-            printf(
-                "[Producer %s] ERROR while enqueue\n",
-                args->source_name);
+            printf("[Producer %s] ERROR on enqueue (packet %d)\n",
+                   args->source_name,
+                   packet.packet_id);
         }
 
         sleep(1);
