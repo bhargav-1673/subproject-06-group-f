@@ -153,9 +153,81 @@
 
 * None
 
+## 2026-06-09
+
+### Bhargav
+
+**Completed**
+
+#### Producer Layer Refactor
+
+* Split generate_packet() into packet_generator.c and packet_generator.h
+* producer.c now contains only producer_thread() — fully decoupled from data source
+* Group-E can swap packet_generator.c with real telecom data without touching producer.c
+
+#### API and Signature Fixes
+
+* enqueue() parameter updated to const DataUnit* — producer cannot modify packet after passing
+* Confirmed dequeue() uses wrlock — correct for multi-consumer scenarios
+
+#### Test Infrastructure
+
+* test_producer.c updated to accept CLI args: `<num_producers> <packets_each>`
+* Removed redundant test_multiple_producers.c
+* Makefile updated: packet_generator.c added to build targets, NUM/PKT override vars added
+
+#### Documentation
+
+* README updated: SharedBuffer struct fields, return codes, repo structure, build section
+* Sync notes rewritten: clean lock strategy table, rdlock extension point documented
+* Known Stable Components section completed: Shared Buffer v1.0, Producer v1.0, Consumer and Integration placeholders
+* bhargav.md and team_progress.md updated
+
+**Current Task**
+
+* Waiting on Ajay's consumer.c
+* Integration planning
+
+**Next**
+
+* Review consumer.c on delivery
+* Implement media_player.c integration
+* End-to-end pipeline test
+
+**Blocked By**
+
+* Consumer module (Ajay)
+
 ---
 
-# Module Status
+### Ajay
+
+**Current Task**
+
+* consumer.h skeleton
+* ConsumerArgs structure
+* process_packet()
+* consumer_thread()
+
+**Blocked By**
+
+* None — shared_buffer.h available, dequeue() API stable
+
+---
+
+### Akhila
+
+**Current Task**
+
+* Architecture diagrams
+* API documentation
+* Integration workflow documentation
+
+**Blocked By**
+
+* None
+
+---
 
 ## Shared Buffer
 
@@ -169,12 +241,13 @@
 
 ## Producer
 
-* [x] Header
-* [x] Implementation
-* [x] Packet Generator
+* [x] Header (producer.h)
+* [x] Implementation (producer.c)
+* [x] Packet Generator (packet_generator.h / packet_generator.c)
 * [x] Multi-Producer Support
 * [x] Testing
 * [x] Concurrency Validation
+* [x] Source-independent refactor (Group-E requirement met)
 
 ## Consumer
 
@@ -220,5 +293,5 @@ Documentation            : IN PROGRESS
 * Producers must use enqueue() only.
 * Consumers must use dequeue() only.
 * Shared Buffer API v1.0 is frozen.
-* Producer API v1.1 is frozen.
+* Producer API v1.1 is frozen. generate_packet() lives in packet_generator.c — swappable by Group-E.
 * Update this file after every major milestone.
