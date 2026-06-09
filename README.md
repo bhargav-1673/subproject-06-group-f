@@ -112,11 +112,16 @@ cdac-mpplab-groupf/
 │
 ├── README.md
 ├── LICENSE
+├── Makefile
 ├── .gitignore
 │
 ├── docs/
-|   ├── status/
-|   ├── team_progress.md   
+│   ├── status/
+│   │   ├── bhargav.md
+│   │   ├── samay.md
+│   │   ├── ajay.md
+│   │   └── akhila.md
+│   ├── team_progress.md
 │   ├── architecture.md
 │   ├── api_spec.md
 │   ├── workflow_diagram.md
@@ -125,6 +130,7 @@ cdac-mpplab-groupf/
 │
 ├── include/
 │   ├── shared_buffer.h
+│   ├── packet_generator.h
 │   ├── producer.h
 │   └── consumer.h
 │
@@ -133,6 +139,7 @@ cdac-mpplab-groupf/
 │   │   └── shared_buffer.c
 │   │
 │   ├── producer/
+│   │   ├── packet_generator.c
 │   │   └── producer.c
 │   │
 │   ├── consumer/
@@ -154,9 +161,7 @@ cdac-mpplab-groupf/
 │   ├── build.sh
 │   └── clean.sh
 │
-├── build/
-│
-└── Makefile
+└── build/
 ```
 
 ---
@@ -193,13 +198,13 @@ The shared memory region is implemented as a circular queue.
 ```c
 typedef struct
 {
-    DataUnit buffer[BUFFER_SIZE];
+    DataUnit slots[BUFFER_SIZE];
 
     int head;
     int tail;
     int count;
 
-    pthread_rwlock_t rwlock;
+    pthread_rwlock_t lock;
 
 } SharedBuffer;
 ```
@@ -237,9 +242,10 @@ int dequeue(
 ### Return Codes
 
 ```c
-#define BUFFER_SUCCESS  0
-#define BUFFER_FULL    -1
-#define BUFFER_EMPTY   -2
+#define BUF_OK     0
+#define BUF_FULL  -1
+#define BUF_EMPTY -2
+#define BUF_ERR   -3
 ```
 
 ---
@@ -279,20 +285,56 @@ This design ensures correctness when multiple producers and consumers are active
 
 # Build Instructions
 
-### Build Buffer Tests
+## Using Make (Recommended)
 
 ```bash
-gcc -O2 -pthread \
-tests/test_buffer.c \
-src/buffer/shared_buffer.c \
--Iinclude \
--o test_buffer
+# Build all tests
+make
+
+# Build and run buffer tests
+make run-buffer
+
+# Build and run producer test (default: 1 producer, 5 packets)
+make run-producer
+
+# Override producer test parameters
+make run-producer NUM=4 PKT=10
+
+# Run all tests in sequence
+make run-all
+
+# Remove build artifacts
+make clean
 ```
 
-### Run
+## Manual Compilation
+
+### Shared Buffer Test
 
 ```bash
-./test_buffer
+gcc -Wall -Wextra -O2 -pthread \
+    tests/test_buffer.c \
+    src/buffer/shared_buffer.c \
+    -Iinclude \
+    -o build/test_buffer
+
+./build/test_buffer
+```
+
+### Producer Test
+
+```bash
+gcc -Wall -Wextra -O2 -pthread \
+    tests/test_producer.c \
+    src/buffer/shared_buffer.c \
+    src/producer/producer.c \
+    src/producer/packet_generator.c \
+    -Iinclude \
+    -o build/test_producer
+
+# Usage: ./build/test_producer <num_producers> <packets_each>
+./build/test_producer 1 5     # single producer
+./build/test_producer 4 5     # 4 concurrent producers
 ```
 
 ---
@@ -349,30 +391,17 @@ Direct commits to `main` should be avoided.
 
 # Testing
 
-### Completed Tests
+Current validation focuses on:
 
-| Test | Module | Result |
-| ---- | ------ | ------ |
-| Buffer initialization | Shared Buffer | ✅ PASS |
-| Enqueue (single) | Shared Buffer | ✅ PASS |
-| Dequeue (single) | Shared Buffer | ✅ PASS |
-| Buffer full condition | Shared Buffer | ✅ PASS |
-| Buffer empty condition | Shared Buffer | ✅ PASS |
-| Circular wrap-around | Shared Buffer | ✅ PASS |
-| Buffer drain | Shared Buffer | ✅ PASS |
-| Single producer | Producer | ✅ PASS |
-| Buffer full — producer drop | Producer | ✅ PASS |
-| 4-thread concurrent producers | Producer | ✅ PASS |
+* Buffer initialization
+* Successful enqueue
+* Successful dequeue
+* Buffer full condition
+* Buffer empty condition
+* Circular queue wrap-around
+* Thread safety verification
 
-### Pending Tests
-
-| Test | Module | Status |
-| ---- | ------ | ------ |
-| Single consumer | Consumer | ⏳ Pending |
-| Buffer empty — consumer retry | Consumer | ⏳ Pending |
-| Multi-consumer concurrency | Consumer | ⏳ Pending |
-| Producer + Consumer end-to-end | Integration | ⏳ Pending |
-| 4 producers + 4 consumers | Integration | ⏳ Pending |
+Additional stress tests will be added during integration.
 
 ---
 
@@ -457,10 +486,10 @@ Never access SharedBuffer internals directly.
 ❌ Incorrect:
 
 ```c
-buffer.slots[i]
-buffer.count
-buffer.head
-buffer.tail
+buf->slots[i]
+buf->count
+buf->head
+buf->tail
 ```
 
 ✅ Correct:
@@ -476,43 +505,18 @@ Only the buffer module should manipulate internal buffer state.
 
 ## Synchronization Notes
 
-### Important Fix (Version 1.0)
+### Lock Strategy (Version 1.0)
 
-During implementation review, a concurrency issue was identified in `dequeue()`.
+Both `enqueue()` and `dequeue()` use `pthread_rwlock_wrlock()` (WRITE lock) because both operations modify shared buffer state (`head`, `tail`, `count`).
 
-Initial design:
+| Function  | Lock Type  | Reason                      |
+| --------- | ---------- | --------------------------- |
+| enqueue() | WRITE Lock | Modifies tail and count     |
+| dequeue() | WRITE Lock | Modifies head and count     |
 
-```c
-pthread_rwlock_rdlock(&buf->lock);
-```
+This guarantees correctness for multiple producers and consumers running simultaneously.
 
-Problem:
-
-* `dequeue()` modifies:
-
-  * `head`
-  * `count`
-
-Using a READ lock allows multiple consumers to enter simultaneously and can cause race conditions.
-
-Correct implementation:
-
-```c
-pthread_rwlock_wrlock(&buf->lock);
-```
-
-Current policy:
-
-| Function  | Lock Type  |
-| --------- | ---------- |
-| enqueue() | WRITE Lock |
-| dequeue() | WRITE Lock |
-
-This guarantees correctness for:
-
-* Multiple Producers
-* Multiple Consumers
-* Future MPI + Pthreads integration (Group-E)
+`pthread_rwlock_rdlock()` is reserved for future read-only operations such as `peek()` or buffer status queries, which Group-E may add during Subtask-07. The rwlock is chosen over a plain mutex specifically to support this extension point.
 
 ---
 
@@ -569,7 +573,7 @@ Responsible for:
 
 ### Shared Buffer API v1.0
 
-Status: ✅ Stable
+Status: Stable
 
 Completed:
 
@@ -580,55 +584,10 @@ Completed:
 * enqueue()
 * dequeue()
 * buffer_destroy()
-* Unit tests (7/7 passing)
+* Unit tests
 * Build system support
 
----
-
-### Producer Module v1.0
-
-Status: ✅ Stable
-
-Completed:
-
-* ProducerArgs structure
-* generate_packet()
-* producer_thread()
-* Single producer test (PASS)
-* Buffer-full condition test (PASS)
-* Multi-producer concurrency test — 4 threads, 20 packets (PASS)
-
-Notes:
-
-* Unique packet ID ranges per producer (Hyderabad: 1000–1004, Mumbai: 2000–2004, etc.)
-* BUF_FULL handled gracefully — packets dropped with log output, no crash
-* No direct buffer access — enqueue() only
-
----
-
-### Consumer Module
-
-Status: 🔄 In Progress (Ajay)
-
-Pending:
-
-* consumer.h
-* consumer.c
-* process_packet()
-* consumer_thread()
-* Unit tests
-
----
-
-### Integration Module
-
-Status: ⏳ Pending consumer delivery
-
-Responsible for:
-
-* Thread creation for all producers and consumers
-* Buffer initialization and destruction
-* End-to-end pipeline validation
+All smoke tests passing.
 
 ---
 
