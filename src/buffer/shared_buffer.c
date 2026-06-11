@@ -138,10 +138,6 @@ int dequeue(
     if (buf->count == 0)
     {
         pthread_rwlock_unlock(&buf->lock);
-
-        printf("[dequeue] BUFFER EMPTY | Thread %lu\n",
-               (unsigned long)pthread_self());
-
         return BUF_EMPTY;
     }
 
