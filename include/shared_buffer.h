@@ -49,7 +49,13 @@ extern "C"
      * VERSION
      * ========================================================= */
 
-#define SHARED_BUFFER_VERSION "1.0"
+#define SHARED_BUFFER_VERSION "1.1"
+    /*
+     * Version 1.1
+     * - Reduced dequeue logging noise
+     * - Improved consumer polling behavior
+     * - Enhanced test validation
+     */
 
     /* =========================================================
      * SECTION 1 - CONFIGURATION CONSTANTS

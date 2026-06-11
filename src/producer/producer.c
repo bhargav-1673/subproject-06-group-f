@@ -52,7 +52,7 @@ void *producer_thread(void *arg)
                    packet.packet_id);
         }
 
-        sleep(1);
+        nanosleep(&(struct timespec){0,100000000L}, NULL);
     }
 
     pthread_exit(NULL);

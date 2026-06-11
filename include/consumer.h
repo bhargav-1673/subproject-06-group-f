@@ -3,18 +3,30 @@
 
 #include "shared_buffer.h"
 
+/*
+ * Completion flag.
+ *
+ * Defined in consumer.c
+ * Referenced by integration layer.
+ *
+ * Set to 1 after all producers finish.
+ */
+extern volatile int producers_done;
+
+/*
+ * Arguments passed to each consumer thread.
+ */
 typedef struct
 {
     SharedBuffer *buffer;
 
-    int packets_to_consume;
+    int consumer_id;
 
 } ConsumerArgs;
 
-void process_packet(
-        const DataUnit *packet);
+/*
+ * Consumer thread function.
+ */
+void *consumer_thread(void *arg);
 
-void *consumer_thread(
-        void *arg);
-
-#endif
+#endif /* CONSUMER_H */
