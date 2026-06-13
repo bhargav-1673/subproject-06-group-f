@@ -83,6 +83,7 @@ Consumer Threads
 │   └── sample_packets.txt
 ├── include
 │   ├── consumer.h
+│   ├── media_player.h
 │   ├── packet_generator.h
 │   ├── packet_processor.h
 │   ├── producer.h
@@ -100,6 +101,7 @@ Consumer Threads
 │   │   ├── consumer.c
 │   │   └── packet_processor.c
 │   ├── integration
+│   │   ├── main_media_player.c
 │   │   └── media_player.c
 │   └── producer
 │       ├── packet_generator.c
@@ -171,7 +173,7 @@ The project uses POSIX Read-Write Locks to ensure correctness when multiple prod
 
 ### Using Make (Recommended)
 ```bash
-# Build all tests
+# Build all targets
 make all
 
 # Build and run buffer tests
@@ -185,6 +187,15 @@ make run-producer NUM=2 PKT=10
 
 # Build and run consumer test
 make run-consumer NUM=4 PKT=20
+
+# Build and run all integration test cases
+make run-integration
+
+# Run standalone media player binary (default: 4 producers, 4 consumers, 20 packets each)
+make run-media-player
+
+# Override media player parameters
+make run-media-player NUM=2 CON=2 PKT=10
 
 # Run all tests in sequence
 make run-all
@@ -228,6 +239,37 @@ gcc -Wall -Wextra -O2 -pthread -Iinclude \
 
 # Usage: ./build/test_consumer <num_consumers> <packets>
 ./build/test_consumer 4 20
+```
+
+**Integration Test:**
+```bash
+gcc -Wall -Wextra -O2 -pthread -Iinclude \
+    tests/test_integration.c \
+    src/integration/media_player.c \
+    src/buffer/shared_buffer.c \
+    src/producer/producer.c \
+    src/producer/packet_generator.c \
+    src/consumer/consumer.c \
+    src/consumer/packet_processor.c \
+    -o build/test_integration
+
+./build/test_integration
+```
+
+**Media Player (standalone binary):**
+```bash
+gcc -Wall -Wextra -O2 -pthread -Iinclude \
+    src/integration/media_player.c \
+    src/integration/main_media_player.c \
+    src/buffer/shared_buffer.c \
+    src/producer/producer.c \
+    src/producer/packet_generator.c \
+    src/consumer/consumer.c \
+    src/consumer/packet_processor.c \
+    -o build/media_player
+
+# Usage: ./build/media_player <num_producers> <num_consumers> <packets_each>
+./build/media_player 4 4 20
 ```
 
 ## Development Guidelines
@@ -292,12 +334,9 @@ When completing a task:
 - **Shared Buffer:** `buffer_init()`, `enqueue()`, `dequeue()`, `buffer_destroy()`, pthread RW Lock synchronization
 - **Producer Module:** `packet_generator.c/h`, `producer.c`, `producer_thread()`, multi-producer support
 - **Consumer Module:** `consumer.h`, `consumer.c`, `packet_processor.c/h`, `process_packet()`, `consumer_thread()`, multi-consumer support
+- **Integration Module:** `media_player.h`, `media_player.c`, `main_media_player.c`, `MediaPlayerConfig`, `MediaPlayerContext`, `media_player_init()`, `media_player_run()`, `media_player_destroy()`, pthread cond var producer-done signal, end-to-end pipeline validation
 
 ### Remaining Deliverables
-- `media_player.c` / `media_player.h`
-- Producer–Consumer Integration Module
-- End-to-End Integration Testing
-- Multi-threaded Stress Testing
 - Documentation Finalization
 - Group-E Handoff Documentation
 
@@ -326,16 +365,15 @@ When completing a task:
 - **Status:** ✅ Stable
 - **Completed:** `consumer.h`, `consumer.c`, `packet_processor.h`, `packet_processor.c`, `process_packet()`, `consumer_thread()`, multi-consumer support, consumer unit tests, consumer shutdown handling.
 
-### Integration Module Status
-- **Status:** ⏳ Pending Completion
-- **Owner:** Bhargav
-- **Pending:** `media_player.c` implementation, Producer–Consumer orchestration, End-to-End pipeline validation.
+### Integration Module v1.0
+- **Status:** ✅ Stable
+- **Completed:** `media_player.h`, `media_player.c`, `main_media_player.c`, `MediaPlayerConfig`, `MediaPlayerContext`, `media_player_init()`, `media_player_run()`, `media_player_destroy()`, `media_player_print_summary()`, pthread cond var + mutex for producer-done signal, end-to-end producer–consumer pipeline validation, 4-scenario integration test suite.
 
 ---
 
 ## Completed Test Results
 
-All core modules have passed their respective unit and concurrency tests.
+All modules have passed their respective unit, concurrency, and integration tests.
 
 - **Shared Buffer Smoke Test:** PASS
 - **FIFO Validation:** PASS
@@ -346,6 +384,10 @@ All core modules have passed their respective unit and concurrency tests.
 - **Consumer Tests:** PASS
 - **Multi-Consumer Test:** PASS
 - **Consumer Shutdown Test:** PASS
+- **Integration Test 1 — Basic Pipeline (1P + 1C, 10 pkts):** PASS
+- **Integration Test 2 — Standard Pipeline (4P + 4C, 20 pkts each):** PASS
+- **Integration Test 3 — Producer-Heavy (6P + 2C, 15 pkts each):** PASS
+- **Integration Test 4 — Consumer-Heavy (2P + 6C, 15 pkts each):** PASS
 
 <details>
 <summary><b>Click to expand detailed test execution logs</b></summary>
@@ -450,6 +492,54 @@ Status               : PASS
 =============================
 [buffer_destroy] Shared buffer shutdown complete
 ```
+#### Integration Test Log
+```text
+========================================
+  C-DAC Sub-Project-06 | Group-F
+  Integration Test Suite
+========================================
+
+========================================
+ TEST 1 — Basic Pipeline
+========================================
+Producers : 1 | Consumers : 1 | Packets : 10 each (10 total)
+...
+Status               : PASS
+[TEST 1 — Basic Pipeline] PASS
+
+========================================
+ TEST 2 — Standard Pipeline (4P + 4C)
+========================================
+Producers : 4 | Consumers : 4 | Packets : 20 each (80 total)
+...
+Status               : PASS
+[TEST 2 — Standard Pipeline (4P + 4C)] PASS
+
+========================================
+ TEST 3 — Producer-Heavy (6P + 2C)
+========================================
+Producers : 6 | Consumers : 2 | Packets : 15 each (90 total)
+...
+Status               : PASS
+[TEST 3 — Producer-Heavy (6P + 2C)] PASS
+
+========================================
+ TEST 4 — Consumer-Heavy (2P + 6C)
+========================================
+Producers : 2 | Consumers : 6 | Packets : 15 each (30 total)
+...
+Status               : PASS
+[TEST 4 — Consumer-Heavy (2P + 6C)] PASS
+
+========================================
+        INTEGRATION TEST SUMMARY
+========================================
+Tests Passed : 4
+Tests Failed : 0
+Total        : 4
+Result       : ALL PASSED
+========================================
+```
 </details>
 
 ---
@@ -466,8 +556,7 @@ Status               : PASS
 - Random packet sizes generation
 
 ### Phase IV
-- Condition variables for efficient blocking
-- Blocking queue implementation
+- Blocking queue implementation (condition variables partially implemented in integration layer)
 - Traffic burst simulation
 
 ### Phase V
