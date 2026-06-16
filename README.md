@@ -74,7 +74,6 @@ Consumer Threads
 │   ├── api_spec.md
 │   ├── architecture.md
 │   ├── integration_notes.md
-│   ├── meeting_notes.md
 │   ├── status
 │   │   └── bhargav.md
 │   ├── team_progress.md
