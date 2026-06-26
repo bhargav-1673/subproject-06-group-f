@@ -62,10 +62,11 @@ Consumer Threads
 ```
 
 ## Core Components
-1. **Producer Layer:** Generates packets and enqueues them.
-2. **Shared Buffer Layer:** Thread-safe circular queue managing data flow.
-3. **Consumer Layer:** Dequeues and processes packets.
-4. **Integration Layer:** Orchestrates thread creation, coordination, and lifecycle management.
+1. **Producer Layer:** Generates packets and enqueues them into the shared buffer.
+2. **Shared Buffer Layer:** Thread-safe circular queue managing data flow between producers and consumers.
+3. **Consumer Layer:** Dequeues and processes packets concurrently.
+4. **Integration Layer:** Orchestrates thread creation, coordination, and lifecycle management via `media_player.c`.
+5. **Metrics/Telemetry Layer:** Thread-safe runtime instrumentation tracking throughput, latency, buffer occupancy, packet loss, and per-thread producer/consumer statistics.
 
 ## Repository Structure
 ```text
@@ -83,6 +84,7 @@ Consumer Threads
 ├── include
 │   ├── consumer.h
 │   ├── media_player.h
+│   ├── metrics.h
 │   ├── packet_generator.h
 │   ├── packet_processor.h
 │   ├── producer.h
@@ -101,7 +103,8 @@ Consumer Threads
 │   │   └── packet_processor.c
 │   ├── integration
 │   │   ├── main_media_player.c
-│   │   └── media_player.c
+│   │   ├── media_player.c
+│   │   └── metrics.c
 │   └── producer
 │       ├── packet_generator.c
 │       └── producer.c
@@ -168,6 +171,97 @@ The project uses POSIX Read-Write Locks to ensure correctness when multiple prod
 
 *Note:* `pthread_rwlock_rdlock()` is reserved for future read-only operations such as `peek()` or buffer status queries. The rwlock is chosen over a plain mutex specifically to support this extension point.
 
+---
+
+## Metrics and Telemetry
+
+The system includes a dedicated thread-safe metrics module (`metrics.h` / `metrics.c`) that instruments the pipeline at runtime and prints a structured telemetry report at the end of each integration run.
+
+### MetricsTracker Structure
+```c
+typedef struct MetricsTracker {
+    pthread_mutex_t lock;
+    struct timespec start_time;
+    struct timespec end_time;
+
+    int packets_generated;
+    int packets_enqueued;
+    int packets_dequeued;
+    int packets_dropped;
+
+    long long total_latency_ms;
+    long long occupancy_sum;
+    int occupancy_samples;
+    int max_occupancy;
+
+    /* Per-thread stats (0-based index, MAX_THREADS=16) */
+    int producer_enqueued[MAX_THREADS];
+    int producer_dropped[MAX_THREADS];
+    int consumer_processed[MAX_THREADS];
+} MetricsTracker;
+```
+
+### Public API
+```c
+void metrics_init(MetricsTracker *tracker);
+void metrics_start(MetricsTracker *tracker);
+void metrics_stop(MetricsTracker *tracker);
+
+/* Aggregate variants — used by standalone buffer/producer tests */
+void metrics_log_enqueue(MetricsTracker *tracker, int count);
+void metrics_log_drop(MetricsTracker *tracker);
+void metrics_log_dequeue(MetricsTracker *tracker, int count, time_t packet_timestamp);
+
+/* Per-thread variants — used by integration layer */
+void metrics_log_enqueue_by(MetricsTracker *tracker, int count, int producer_id);
+void metrics_log_drop_by(MetricsTracker *tracker, int producer_id);
+void metrics_log_dequeue_by(MetricsTracker *tracker, int count, time_t packet_timestamp, int consumer_id);
+
+void metrics_print_report(const MetricsTracker *tracker, int num_producers, int num_consumers, int expected_packets);
+```
+
+### Sample Telemetry Report Output
+```text
+==================================================
+         TELEMETRY PERFORMANCE REPORT
+==================================================
+ Runtime Configuration:
+   Producers Spawned       : 2
+   Consumers Spawned       : 6
+   Expected Packets        : 30
+
+ Traffic Statistics:
+   Total Generated Packets : 30
+   Successfully Enqueued   : 30
+   Successfully Dequeued   : 30
+   Dropped Packets (Full)  : 0
+   Packet Loss Rate        : 0.00 %
+
+ Performance Metrics:
+   Elapsed Execution Time  : 1.752297 seconds
+   Sustained Throughput    : 17.12 packets/sec
+   Average Latency         : 148.97 ms
+
+ Queue Occupancy:
+   Average Buffer Load     : 2.12 slots
+   Peak Buffer Load        : 6 slots
+
+ Producer Breakdown:
+   Producer-1              : 15 enqueued, 0 dropped
+   Producer-2              : 15 enqueued, 0 dropped
+
+ Consumer Breakdown:
+   Consumer-1              : 9 packets processed
+   Consumer-2              : 5 packets processed
+   Consumer-3              : 4 packets processed
+   Consumer-4              : 4 packets processed
+   Consumer-5              : 6 packets processed
+   Consumer-6              : 2 packets processed
+==================================================
+```
+
+The per-thread consumer breakdown demonstrates real non-uniform load distribution under `pthread_rwlock_t` contention — a key observable property of concurrent scheduling in the pthreads model.
+
 ## Build Instructions
 
 ### Using Make (Recommended)
@@ -221,6 +315,7 @@ gcc -Wall -Wextra -O2 -pthread -Iinclude \
     src/buffer/shared_buffer.c \
     src/producer/producer.c \
     src/producer/packet_generator.c \
+    src/integration/metrics.c \
     -o build/test_producer
 
 # Usage: ./build/test_producer <num_producers> <packets_each>
@@ -234,6 +329,7 @@ gcc -Wall -Wextra -O2 -pthread -Iinclude \
     src/buffer/shared_buffer.c \
     src/consumer/consumer.c \
     src/consumer/packet_processor.c \
+    src/integration/metrics.c \
     -o build/test_consumer
 
 # Usage: ./build/test_consumer <num_consumers> <packets>
@@ -245,6 +341,7 @@ gcc -Wall -Wextra -O2 -pthread -Iinclude \
 gcc -Wall -Wextra -O2 -pthread -Iinclude \
     tests/test_integration.c \
     src/integration/media_player.c \
+    src/integration/metrics.c \
     src/buffer/shared_buffer.c \
     src/producer/producer.c \
     src/producer/packet_generator.c \
@@ -260,6 +357,7 @@ gcc -Wall -Wextra -O2 -pthread -Iinclude \
 gcc -Wall -Wextra -O2 -pthread -Iinclude \
     src/integration/media_player.c \
     src/integration/main_media_player.c \
+    src/integration/metrics.c \
     src/buffer/shared_buffer.c \
     src/producer/producer.c \
     src/producer/packet_generator.c \
@@ -331,12 +429,14 @@ When completing a task:
 ### Completed Deliverables
 - **Data Structures:** `DataUnit`, `SharedBuffer`
 - **Shared Buffer:** `buffer_init()`, `enqueue()`, `dequeue()`, `buffer_destroy()`, pthread RW Lock synchronization
-- **Producer Module:** `packet_generator.c/h`, `producer.c`, `producer_thread()`, multi-producer support
+- **Producer Module:** `packet_generator.c/h`, `producer.c`, `producer_thread()`, multi-producer support, `producer_id` field for per-thread metrics indexing
 - **Consumer Module:** `consumer.h`, `consumer.c`, `packet_processor.c/h`, `process_packet()`, `consumer_thread()`, multi-consumer support
 - **Integration Module:** `media_player.h`, `media_player.c`, `main_media_player.c`, `MediaPlayerConfig`, `MediaPlayerContext`, `media_player_init()`, `media_player_run()`, `media_player_destroy()`, pthread cond var producer-done signal, end-to-end pipeline validation
+- **Metrics/Telemetry Module:** `metrics.h`, `metrics.c`, `MetricsTracker`, aggregate + per-thread instrumentation, throughput, latency, buffer occupancy, packet loss rate, per-producer and per-consumer breakdown
 
 ### Remaining Deliverables
-- Documentation Finalization
+- Thesis-style report (July 12, 2026)
+- Presentation — PPT + PDF (July 13–17, 2026)
 - Group-E Handoff Documentation
 
 ---
@@ -352,21 +452,25 @@ When completing a task:
 
 ## Known Stable Components
 
-### Shared Buffer API v1.0
+### Shared Buffer API v1.1
 - **Status:** ✅ Stable
 - **Completed:** `DataUnit` structure, `SharedBuffer` structure, circular buffer implementation, `buffer_init()`, `enqueue()`, `dequeue()`, `buffer_destroy()`, unit tests (passing), build system support.
 
-### Producer Module v1.0
+### Producer Module v1.1
 - **Status:** ✅ Stable
-- **Completed:** `ProducerArgs` structure, `packet_generator.h` / `packet_generator.c` (swappable data source), `generate_packet()` (isolated), `producer_thread()` (no buffer internals accessed), single/multi-producer tests, buffer-full condition handling.
+- **Completed:** `ProducerArgs` structure (with `producer_id` field), `packet_generator.h` / `packet_generator.c` (swappable data source), `generate_packet()` (isolated), `producer_thread()` (no buffer internals accessed), single/multi-producer tests, buffer-full condition handling, per-thread metrics via `metrics_log_enqueue_by()` / `metrics_log_drop_by()`.
 
 ### Consumer Module v1.0
 - **Status:** ✅ Stable
-- **Completed:** `consumer.h`, `consumer.c`, `packet_processor.h`, `packet_processor.c`, `process_packet()`, `consumer_thread()`, multi-consumer support, consumer unit tests, consumer shutdown handling.
+- **Completed:** `consumer.h`, `consumer.c`, `packet_processor.h`, `packet_processor.c`, `process_packet()`, `consumer_thread()`, multi-consumer support, consumer unit tests, consumer shutdown handling, per-thread metrics via `metrics_log_dequeue_by()`.
 
 ### Integration Module v1.0
 - **Status:** ✅ Stable
 - **Completed:** `media_player.h`, `media_player.c`, `main_media_player.c`, `MediaPlayerConfig`, `MediaPlayerContext`, `media_player_init()`, `media_player_run()`, `media_player_destroy()`, `media_player_print_summary()`, pthread cond var + mutex for producer-done signal, end-to-end producer–consumer pipeline validation, 4-scenario integration test suite.
+
+### Metrics Module v1.0
+- **Status:** ✅ Stable
+- **Completed:** `MetricsTracker` struct, `metrics_init/start/stop()`, aggregate logging functions, per-thread `_by` variants (`metrics_log_enqueue_by`, `metrics_log_drop_by`, `metrics_log_dequeue_by`), `metrics_print_report()` with full telemetry output including per-producer and per-consumer breakdown, `safe_log()` for thread-safe console output.
 
 ---
 
@@ -547,24 +651,26 @@ Result       : ALL PASSED
 
 *Note: The following phases are **NOT** current deliverables and will be discussed with Dr. V.C.V. Rao after the completion of the currently approved implementation plan.*
 
-### Phase III
-- Logging mutex implementation
-- Statistics module
-- Throughput metrics
-- Latency metrics
-- Random packet sizes generation
+### ✅ Phase III — Completed
+- ✅ Logging mutex implementation (`safe_log()` in `metrics.c`)
+- ✅ Statistics module (`MetricsTracker`, `metrics.h` / `metrics.c`)
+- ✅ Throughput metrics (packets/sec)
+- ✅ Latency metrics (average end-to-end latency in ms)
+- ✅ Per-thread producer and consumer breakdown
+- ✅ Buffer occupancy tracking (average + peak)
+- ✅ Packet loss rate
 
 ### Phase IV
 - Blocking queue implementation (condition variables partially implemented in integration layer)
-- Traffic burst simulation
+- Traffic burst simulation with configurable delay injection
 
 ### Phase V
 - Dedicated monitoring thread
-- Performance benchmarking suite
+- Performance benchmarking suite across thread configurations
 - Telecom analytics dashboard
 
 ### Phase VI
-- MPI integration with Group-E
+- MPI integration with Group-E (Hybrid MPI + Pthreads architecture)
 - Distributed producer-consumer architecture
 - Multi-node telecom extraction server
 
