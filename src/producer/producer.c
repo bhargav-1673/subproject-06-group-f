@@ -20,6 +20,7 @@
 #include <pthread.h>
 
 #include "producer.h"
+#include "metrics.h"
 
 void *producer_thread(void *arg)
 {
@@ -35,21 +36,29 @@ void *producer_thread(void *arg)
 
         if (status == BUF_OK)
         {
-            printf("[Producer %s] Packet %d enqueued\n",
-                   args->source_name,
-                   packet.packet_id);
+            if (args->metrics != NULL)
+            {
+                metrics_log_enqueue_by(args->metrics, args->buffer->count, args->producer_id);
+            }
+            safe_log("[Producer %s] Packet %d enqueued\n",
+                     args->source_name,
+                     packet.packet_id);
         }
         else if (status == BUF_FULL)
         {
-            printf("[Producer %s] BUFFER FULL — Packet %d dropped\n",
-                   args->source_name,
-                   packet.packet_id);
+            if (args->metrics != NULL)
+            {
+                metrics_log_drop_by(args->metrics, args->producer_id);
+            }
+            safe_log("[Producer %s] BUFFER FULL — Packet %d dropped\n",
+                     args->source_name,
+                     packet.packet_id);
         }
         else
         {
-            printf("[Producer %s] ERROR on enqueue (packet %d)\n",
-                   args->source_name,
-                   packet.packet_id);
+            safe_log("[Producer %s] ERROR on enqueue (packet %d)\n",
+                     args->source_name,
+                     packet.packet_id);
         }
 
         nanosleep(&(struct timespec){0,100000000L}, NULL);

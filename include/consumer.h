@@ -3,6 +3,8 @@
 
 #include "shared_buffer.h"
 
+struct MetricsTracker;
+
 /*
  * Completion flag.
  *
@@ -21,6 +23,7 @@ typedef struct
     SharedBuffer *buffer;
 
     int consumer_id;
+    struct MetricsTracker *metrics;
 
 } ConsumerArgs;
 

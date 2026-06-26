@@ -41,7 +41,10 @@ DataUnit generate_packet(
         source);
 
     packet.size      = (int)strlen(packet.data);
-    packet.timestamp = time(NULL);
+    
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    packet.timestamp = (time_t)((long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 
     return packet;
 }

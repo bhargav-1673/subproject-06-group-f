@@ -42,6 +42,7 @@ producer_test: $(BUILD_DIR)
 		src/buffer/shared_buffer.c \
 		src/producer/producer.c \
 		src/producer/packet_generator.c \
+		src/integration/metrics.c \
 		-o $(PRODUCER_TEST)
 
 # --------------------------------------------------
@@ -54,6 +55,7 @@ consumer_test: $(BUILD_DIR)
 		src/buffer/shared_buffer.c \
 		src/consumer/consumer.c \
 		src/consumer/packet_processor.c \
+		src/integration/metrics.c \
 		-o $(CONSUMER_TEST)
 
 # --------------------------------------------------
@@ -64,6 +66,7 @@ integration_test: $(BUILD_DIR)
 	$(CC) $(CFLAGS) \
 		tests/test_integration.c \
 		src/integration/media_player.c \
+		src/integration/metrics.c \
 		src/buffer/shared_buffer.c \
 		src/producer/producer.c \
 		src/producer/packet_generator.c \
@@ -78,6 +81,7 @@ integration_test: $(BUILD_DIR)
 media_player: $(BUILD_DIR)
 	$(CC) $(CFLAGS) \
 		src/integration/media_player.c \
+		src/integration/metrics.c \
 		src/integration/main_media_player.c \
 		src/buffer/shared_buffer.c \
 		src/producer/producer.c \

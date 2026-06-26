@@ -14,12 +14,16 @@
 #include "shared_buffer.h"
 #include "packet_generator.h"
 
+struct MetricsTracker;
+
 typedef struct
 {
     SharedBuffer *buffer;
     char          source_name[32];
     int           packets_to_generate;
     int           start_packet_id;
+    int           producer_id;            /* 0-based thread index for per-thread metrics */
+    struct MetricsTracker *metrics;
 
 } ProducerArgs;
 

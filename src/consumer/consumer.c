@@ -43,6 +43,7 @@
 
 #include "consumer.h"
 #include "packet_processor.h"
+#include "metrics.h"
 
 /*
 
@@ -64,13 +65,12 @@ void *consumer_thread(void *arg)
 
     if (args == NULL)
     {
-        fprintf(stderr,
-                "[Consumer] ERROR: NULL argument received\n");
+        safe_log("[Consumer] ERROR: NULL argument received\n");
         return NULL;
     }
 
-    printf("[Consumer-%d] Started\n",
-           args->consumer_id);
+    safe_log("[Consumer-%d] Started\n",
+             args->consumer_id);
 
     while (1)
     {
@@ -84,6 +84,12 @@ void *consumer_thread(void *arg)
         switch (status)
         {
         case BUF_OK:
+
+            if (args->metrics != NULL)
+            {
+                metrics_log_dequeue_by(args->metrics, args->buffer->count,
+                                       packet.timestamp, args->consumer_id - 1);
+            }
 
             process_packet(
                 &packet,
@@ -99,11 +105,11 @@ void *consumer_thread(void *arg)
              */
             if (producers_done)
             {
-                printf(
+                safe_log(
                     "[Consumer-%d] Buffer empty and producers finished. Exiting.\n",
                     args->consumer_id);
 
-                printf(
+                safe_log(
                     "[Consumer-%d] Shutdown complete\n",
                     args->consumer_id);
 
@@ -127,12 +133,11 @@ void *consumer_thread(void *arg)
         case BUF_ERR:
         default:
 
-            fprintf(
-                stderr,
+            safe_log(
                 "[Consumer-%d] ERROR: dequeue() failed\n",
                 args->consumer_id);
 
-            printf(
+            safe_log(
                 "[Consumer-%d] Shutdown complete\n",
                 args->consumer_id);
 

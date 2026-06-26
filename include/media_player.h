@@ -3,6 +3,7 @@
 
 #include <pthread.h>
 #include "shared_buffer.h"
+#include "metrics.h"
 
 /* ─────────────────────────────────────────────
  * MediaPlayerConfig
@@ -35,6 +36,9 @@ typedef struct {
     /* Thread handle arrays (heap-allocated)     */
     pthread_t          *producer_threads;
     pthread_t          *consumer_threads;
+
+    /* Performance Metrics Tracking */
+    MetricsTracker      metrics;
 } MediaPlayerContext;
 
 /* ─────────────────────────────────────────────

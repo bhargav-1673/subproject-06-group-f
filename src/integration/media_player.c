@@ -16,6 +16,9 @@ int media_player_init(MediaPlayerContext *ctx, const MediaPlayerConfig *cfg)
     /* Initialize shared buffer */
     buffer_init(&ctx->buffer);
 
+    /* Initialize metrics tracker */
+    metrics_init(&ctx->metrics);
+
     /* Initialize producer-done cond var + mutex */
     if (pthread_mutex_init(&ctx->producers_done_mutex, NULL) != 0) {
         fprintf(stderr, "[media_player_init] pthread_mutex_init failed\n");
@@ -72,6 +75,9 @@ int media_player_run(MediaPlayerContext *ctx, const MediaPlayerConfig *cfg)
         return -1;
     }
 
+    /* Start metrics tracking */
+    metrics_start(&ctx->metrics);
+
     /* ── Spawn consumer threads first ──
      * Consumers start waiting before any data arrives.
      * Mirrors hyPACK: renderer is ready before the network
@@ -85,6 +91,7 @@ int media_player_run(MediaPlayerContext *ctx, const MediaPlayerConfig *cfg)
     for (i = 0; i < cfg->num_consumers; i++) {
         c_args[i].buffer      = &ctx->buffer;
         c_args[i].consumer_id = i + 1;
+        c_args[i].metrics     = &ctx->metrics;
 
         if (pthread_create(&ctx->consumer_threads[i], NULL,
                            consumer_thread, &c_args[i]) != 0) {
@@ -109,8 +116,10 @@ int media_player_run(MediaPlayerContext *ctx, const MediaPlayerConfig *cfg)
     for (i = 0; i < cfg->num_producers; i++) {
         p_args[i].buffer              = &ctx->buffer;
         p_args[i].packets_to_generate = cfg->packets_per_producer;
+        p_args[i].producer_id         = i;   /* 0-based; matches producer_enqueued[i] */
         /* start_packet_id offset ensures globally unique IDs across producers */
         p_args[i].start_packet_id     = (i * cfg->packets_per_producer) + 1;
+        p_args[i].metrics             = &ctx->metrics;
         snprintf(p_args[i].source_name, sizeof(p_args[i].source_name),
                  "%s", site_names[i % max_sites]);
 
@@ -148,6 +157,11 @@ int media_player_run(MediaPlayerContext *ctx, const MediaPlayerConfig *cfg)
         pthread_join(ctx->consumer_threads[i], NULL);
     }
     printf("[media_player] All consumer threads completed.\n");
+
+    /* Stop metrics tracking and print report */
+    metrics_stop(&ctx->metrics);
+    metrics_print_report(&ctx->metrics, cfg->num_producers, cfg->num_consumers,
+                         cfg->num_producers * cfg->packets_per_producer);
 
     free(p_args);
     free(c_args);
